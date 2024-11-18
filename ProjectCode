@@ -9,7 +9,6 @@ import os
 import openslide
 import random
 import tensorflow as tf
-from tensorflow.keras import layers, models
 import numpy as np
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
@@ -23,20 +22,19 @@ import matplotlib.pyplot as plt
 
 #Path specification for Primary WSI
 primary_folder = '/content/drive/MyDrive/Arya_Data/Primary TCGA-SKCM'
-
 # Output folder where downsampled .svs files or regions of interest (ROI) will be saved
-output_folder = '/content/drive/My Drive/Arya_Data/output_downsampled/primary'
+output_folder1 = '/content/drive/My Drive/Arya_Data/output_downsampled/primary'
 
 # Create output folder if it doesn't exist
-if not os.path.exists(output_folder):
+if not os.path.exists(output_folder1):
    os.makedirs(output_folder)
 
 #Path specification for Metastatic WSI
 metastatic_folder = '/content/drive/MyDrive/Arya_Data/Metastatic TCGA-SKCM'
-output_folder = '/content/drive/My Drive/Arya_Data/output_downsampled/metastatic'
+output_folder2 = '/content/drive/My Drive/Arya_Data/output_downsampled/metastatic'
 
 # Create output folder if it doesn't exist
-if not os.path.exists(output_folder):
+if not os.path.exists(output_folder2):
    os.makedirs(output_folder)
 
 def process_svs_file(svs_folder, output_folder, level=1):
@@ -61,18 +59,14 @@ def process_svs_file(svs_folder, output_folder, level=1):
             print(f"Processed {file_name} and saved downsampled version to {output_path}")
 
 # Process .svs files from both folders at a lower resolution (level 1)
-process_svs_file(primary_folder, output_folder, level=1)
-process_svs_file(metastatic_folder, output_folder, level=1)
+process_svs_file(primary_folder, output_folder1, level=1)
+print ("Conversion for Primary WSI complete")
+process_svs_file(metastatic_folder, output_folder2, level=1)
+print ("Conversion for Metastatic WSI complete")
 
 # Paths to folders
 primary_folder = '/content/drive/MyDrive/Arya_Data/output_downsampled/primary'
 metastatic_folder = '/content/drive/MyDrive/Arya_Data/output_downsampled/metastatic'
-
-# Create output directories for saving ROIs
-primary_save_folder = '/content/drive/MyDrive/Arya_Data/output_downsampled/primary_rois'
-metastatic_save_folder = '/content/drive/MyDrive/Arya_Data/output_downsampled/metastatic_rois'
-os.makedirs(primary_save_folder, exist_ok=True)
-os.makedirs(metastatic_save_folder, exist_ok=True)
 
 # Function to extract ROIs and save them
 def extract_and_save_rois(image, save_folder, base_filename):
@@ -123,6 +117,12 @@ def process_folder(folder, save_folder, label):
             img = cv2.imread(file_path)
             base_filename = os.path.splitext(file_name)[0]  # Remove file extension for naming
             extract_and_save_rois(img, save_folder, base_filename)
+
+# Create output directories for saving ROIs
+primary_save_folder = '/content/drive/MyDrive/Arya_Data/output_downsampled/primary_rois500'
+metastatic_save_folder = '/content/drive/MyDrive/Arya_Data/output_downsampled/metastatic_rois500'
+os.makedirs(primary_save_folder, exist_ok=True)
+os.makedirs(metastatic_save_folder, exist_ok=True)
 
 # Process and save ROIs for both primary and metastatic tumor images
 process_folder(primary_folder, primary_save_folder, 0)
@@ -176,122 +176,151 @@ y_train = np.load('y_train.npy')
 X_test = np.load('X_test.npy')
 y_test = np.load('y_test.npy')
 
-# Create TensorFlow datasets from NumPy arrays
-train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1024).batch(32).prefetch(tf.data.experimental.AUTOTUNE)
-test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(32).prefetch(tf.data.experimental.AUTOTUNE)
+# Convert y_train and y_test to categorical (one-hot encoding)
+from tensorflow.keras.utils import to_categorical  # Import to_categorical
+y_train = to_categorical(y_train) 
+y_test = to_categorical(y_test) 
 
-# Vision Transformer (ViT) model
-def create_vit_model(input_shape=(224, 224, 3), num_classes=2):
-    inputs = layers.Input(shape=input_shape)
+import os
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import layers, Model
+from tensorflow.keras.applications import EfficientNetB0
+from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
 
-    # Patch extraction
-    patches = layers.Conv2D(768, kernel_size=(16, 16), strides=(16, 16))(inputs)
-
-    # Flatten patches
-    flat_patches = layers.Reshape((-1, 768))(patches)
-
-    # Add spatial attention (optional)
-    attention = layers.MultiHeadAttention(num_heads=8, key_dim=768)(flat_patches, flat_patches)
-
-    # Transformer encoder layers
-    x = layers.LayerNormalization()(attention)
-    x = layers.Dense(2048, activation='relu')(x)
-    x = layers.Dense(768)(x)
-
-    # Final classification
-    x = layers.GlobalAveragePooling1D()(x)
-    x = layers.Dense(512, activation='relu')(x)
-    outputs = layers.Dense(num_classes, activation='softmax')(x)
-
-    model = models.Model(inputs=inputs, outputs=outputs)
-    return model
-
-# Create TensorFlow datasets from NumPy arrays
-train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(1024).batch(32).prefetch(tf.data.experimental.AUTOTUNE)
-test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(32).prefetch(tf.data.experimental.AUTOTUNE)
-
-# Compile and train the model
-vit_model = create_vit_model()
-vit_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-# Train the model using TensorFlow datasets
-history = vit_model.fit(
-    train_dataset,
-    validation_data=test_dataset,
-    epochs=25
+# Data augmentation
+data_gen = ImageDataGenerator(
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    fill_mode='nearest'
 )
 
-# Predictions on the test set
-y_pred = vit_model.predict(X_test)
-y_pred_labels = np.argmax(y_pred, axis=1)
+# Compute class weights
+y_train_labels = np.argmax(y_train, axis=1)  # Convert to single labels for class weight calculation
+class_weights = compute_class_weight('balanced', classes=np.unique(y_train_labels), y=y_train_labels)
+class_weights = dict(enumerate(class_weights))
 
-# Calculate accuracy, precision, recall
-accuracy = accuracy_score(y_test, y_pred_labels)
-precision = precision_score(y_test, y_pred_labels)
-recall = recall_score(y_test, y_pred_labels)
+# Build a simple ViT-like model using EfficientNet as the backbone
+def build_model(input_shape=(224, 224, 3)):
+    base_model = EfficientNetB0(weights='imagenet', include_top=False, input_shape=input_shape)
+    x = layers.GlobalAveragePooling2D()(base_model.output)
+    x = layers.Dropout(0.3)(x)
+    output = layers.Dense(2, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=output)
+    return model
 
-# Confusion matrix
-conf_matrix = confusion_matrix(y_test, y_pred_labels)
-sns.heatmap(conf_matrix, annot=True, fmt="d", cmap='Blues')
-plt.title("Confusion Matrix")
+model = build_model()
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Train the model
+history = model.fit(
+    data_gen.flow(X_train, y_train, batch_size=32),
+    validation_data=(X_test, y_test),
+    epochs=25,
+    class_weight=class_weights
+)
+
+model.summary()
+
+# Evaluate the model
+y_pred = model.predict(X_test)
+y_pred_classes = np.argmax(y_pred, axis=1)
+y_true_classes = np.argmax(y_test, axis=1)
+
+# Classification metrics
+print("Classification Report:\n", classification_report(y_true_classes, y_pred_classes))
+
+# Confusion Matrix
+cm = confusion_matrix(y_true_classes, y_pred_classes)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Primary", "Metastatic"])
+disp.plot(cmap=plt.cm.Blues)
 plt.show()
 
-print(f"Accuracy: {accuracy:.2f}, Precision: {precision:.2f}, Recall: {recall:.2f}")
+# Training vs validation plots
+plt.figure(figsize=(12, 4))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.legend()
+plt.title('Accuracy')
 
-# Grad-CAM function with dynamic handling of dimensions and shape logging
-def grad_cam_debug(model, img, layer_name):
-    grad_model = models.Model([model.inputs], [model.get_layer(layer_name).output, model.output])
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Train Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.legend()
+plt.title('Loss')
+plt.show()
+
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.preprocessing.image import array_to_img
+
+def get_gradcam_heatmap(model, img_array, last_conv_layer_name, pred_index=None):
+
+    grad_model = Model(
+        inputs=model.inputs,
+        outputs=[model.get_layer(last_conv_layer_name).output, model.output]
+    )
 
     with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(np.array([img]))
-        loss = predictions[:, 1]  # Class of interest (e.g., metastatic)
+        conv_outputs, predictions = grad_model(img_array)
+        if pred_index is None:
+            pred_index = tf.argmax(predictions[0])
+        class_channel = predictions[:, pred_index]
 
-    # Get gradients of the loss with respect to the output feature map
-    grads = tape.gradient(loss, conv_outputs)[0]
-    conv_output_dims = len(conv_outputs.shape)
+    # Compute the gradient of the top predicted class
+    grads = tape.gradient(class_channel, conv_outputs)
 
-    # Handle different output dimensions
-    if conv_output_dims == 4:
-        pooled_grads = K.mean(grads, axis=(0, 1, 2))
-        conv_outputs = conv_outputs[0]
-        for i in range(conv_outputs.shape[-1]):
-            conv_outputs[:, :, i] *= pooled_grads[i]
-    elif conv_output_dims == 3:
-        pooled_grads = K.mean(grads, axis=(0, 1))
-        conv_outputs = conv_outputs[0]
-        conv_outputs *= pooled_grads
-    elif conv_output_dims == 2:
-        pooled_grads = K.mean(grads, axis=0)
-        conv_outputs = conv_outputs[0]
-        conv_outputs *= pooled_grads
+    # Pool the gradients
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    # Compute heatmap and ensure it's normalized properly
-    if conv_output_dims == 4 or conv_output_dims == 3:
-        heatmap = np.mean(conv_outputs, axis=-1)
-    else:
-        heatmap = conv_outputs
+    # Multiply the pooled gradients with the convolutional outputs
+    conv_outputs = conv_outputs[0]
+    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
 
-    # Print heatmap for debugging
-    print(f"Heatmap values: {heatmap}")
-
-    heatmap = np.maximum(heatmap, 0)  # ReLU to retain only positive gradients
-    heatmap = np.nan_to_num(heatmap)  # Avoid NaN values
-    if np.max(heatmap) > 0:
-        heatmap /= np.max(heatmap)  # Normalize heatmap
-
+    # Normalize the heatmap
+    heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
     return heatmap
 
-# Generate the heatmap for a test image
-layer_name = 'multi_head_attention_1'
-heatmap = grad_cam_debug(vit_model, X_test[0], layer_name)
+def overlay_gradcam(image, heatmap, alpha=0.4):
+  
+    heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 
-# Superimpose heatmap on original image
-img = X_test[0]
-heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
-heatmap = np.uint8(255 * heatmap)
-heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    overlayed_image = cv2.addWeighted(heatmap, alpha, image, 1 - alpha, 0)
+    return overlayed_image
 
-superimposed_img = heatmap * 0.4 + img
-plt.imshow(superimposed_img)
-plt.title('Grad-CAM Visualization')
-plt.show()
+# Visualize Grad-CAM for a few test images
+last_conv_layer_name = 'top_conv'  # Update this with the correct name of the last conv layer
+sample_images = X_test[:10]  # Select the first 5 test images for visualization
+sample_labels = np.argmax(y_test[:10], axis=1)
+
+for i, img in enumerate(sample_images):
+    img_array = np.expand_dims(img / 255.0, axis=0)  # Normalize and add batch dimension
+    heatmap = get_gradcam_heatmap(model, img_array, last_conv_layer_name)
+    
+    overlayed_image = overlay_gradcam(np.uint8(img), heatmap)
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)
+    plt.imshow(array_to_img(img), cmap='gray')
+    plt.title(f"Original Image\nTrue Label: {sample_labels[i]}")
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(overlayed_image)
+    plt.title("Grad-CAM Visualization")
+    plt.show()
