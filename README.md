@@ -8,7 +8,6 @@ This repository contains a Python script for the identification of metastatic an
   !pip install openslide-python
   !apt-get install openslide-tools
   !pip install Pillow
-  !pip install tensorflow scikit-learn matplotlib opencv-python scikit-image
 
 # Google Drive Setup
   The script assumes that your data is stored in Google Drive. 
