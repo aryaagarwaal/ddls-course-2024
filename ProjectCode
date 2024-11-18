@@ -1,3 +1,5 @@
+#created with the assistance of openAI chatGPT4-o
+
 !pip install openslide-python
 !apt-get install openslide-tools
 !pip install Pillow
