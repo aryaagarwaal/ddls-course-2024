@@ -36,7 +36,7 @@ This repository contains a Python script for the identification of metastatic an
 
 # Dataset Preparation
   The script loads images and labels from the folders, shuffles the data, and splits it into training and testing sets (80% train, 20% test).
-  X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.2, random_state=42)
+  X_train, X_test, y_train, y_test = train_test_split(images, labels, test_size=0.2, random_state=42). The dataset is balanced using class weights and data augmentation functions
 
 # Model Training
   The Vision Transformer (ViT) model is used to classify the tumor images. The model is trained for 25 epochs on the training dataset.
